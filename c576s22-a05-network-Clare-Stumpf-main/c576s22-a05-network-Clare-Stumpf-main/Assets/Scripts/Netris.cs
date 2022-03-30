@@ -175,6 +175,7 @@ public static class Netris
                 newChunk = newChunk.Concat(movedPieces).ToArray();
             }
 
+        GMScript.SendClearMessage();
         return newChunk;
     }
     

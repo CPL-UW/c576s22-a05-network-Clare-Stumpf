@@ -6,3 +6,5 @@
 4. Hit run?
 
 Apologies for the mess. YMMV.
+
+Whenever you clear a line, a random point is placed on the enemy board.

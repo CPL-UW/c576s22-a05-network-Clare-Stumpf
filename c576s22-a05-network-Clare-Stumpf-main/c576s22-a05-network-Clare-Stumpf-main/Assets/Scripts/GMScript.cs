@@ -1,4 +1,5 @@
-// using Random = UnityEngine.Random;
+using Random = UnityEngine.Random;
+using System.Collections.Generic;
 
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -7,6 +8,8 @@ using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.Tilemaps;
+using System.Linq;
+
 using static Netris;
 
 // ReSharper disable once InconsistentNaming
@@ -68,14 +71,14 @@ public class GMScript : NetworkBehaviour
 
     private const int MAX_MESSAGE = 1024;
 
+    // ???
     static void SendMessageToAll(string message_type, string message) {
         if (NetworkManager.Singleton.LocalClientId != NetworkManager.Singleton.ServerClientId)
         {
             using var a_writer = new FastBufferWriter(MAX_MESSAGE, Allocator.Temp);
             {
                 a_writer.WriteValueSafe(message);
-                NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(message_type,
-                    NetworkManager.Singleton.ServerClientId, a_writer);
+                NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(message_type, NetworkManager.Singleton.ServerClientId, a_writer);
 
             }
         } else {
@@ -89,17 +92,28 @@ public class GMScript : NetworkBehaviour
 
     private const string MSG_TYPE_CHUNK = "CHUNK";
     private const string MSG_TYPE_PIECE = "PIECE";
+    private const string MSG_TYPE_CLEAR = "CLEAR";
 
+    // Sends the message to all with the message and chunk message type
     private void SendChunkMessage()
     {
         SendMessageToAll(MSG_TYPE_CHUNK,v2s(_myChunk));
     }
 
+    // Sends the message to all with the message and piece message type
     private void SendPieceMessage()
     {
         SendMessageToAll(MSG_TYPE_PIECE,v2s(_myPiece));
     }
 
+    // Sends the message to all with the message and clear message type
+    public static void SendClearMessage()
+    {
+        SendMessageToAll(MSG_TYPE_CLEAR,"Line");
+    }
+
+    // Sends the chunk and piece message if the network has been registered and started
+    // Otherwise, it will either return nothing or register the named message handlers and register them
     void DoNetworkUpdate()
     {
         if (!_networkStarted) return;
@@ -107,6 +121,7 @@ public class GMScript : NetworkBehaviour
         {
             NetworkManager.Singleton.CustomMessagingManager.RegisterNamedMessageHandler(MSG_TYPE_CHUNK, ReceiveChunkMessage);
             NetworkManager.Singleton.CustomMessagingManager.RegisterNamedMessageHandler(MSG_TYPE_PIECE, ReceivePieceMessage);
+            NetworkManager.Singleton.CustomMessagingManager.RegisterNamedMessageHandler(MSG_TYPE_CLEAR, ReceiveClearMessage);
             _networkRegistered = true;
             return;
         }
@@ -114,6 +129,7 @@ public class GMScript : NetworkBehaviour
         SendPieceMessage();
     }
 
+    // Reads the piece message and places it on the enemy board
     private void ReceivePieceMessage(ulong senderID, FastBufferReader reader)
     {
         Dirty = true;
@@ -121,15 +137,45 @@ public class GMScript : NetworkBehaviour
         _enemyPiece = SwitchBounds(s2v(message),_hBounds,_eBounds);
     }
 
+    // Reads the chunk message and places it on the emnemy board
     private void ReceiveChunkMessage(ulong senderID, FastBufferReader reader)
     {
         Dirty = true;
         reader.ReadValueSafe(out var message);
         _enemyChunk = SwitchBounds(s2v(message),_hBounds,_eBounds);
     }
-    
-    
-    
+
+    // Reads the chunk message and places it on the emnemy board
+    private void ReceiveClearMessage(ulong senderID, FastBufferReader reader)
+    {
+        Dirty = true;
+        reader.ReadValueSafe(out var message);
+        Debug.Log("Received Clear Message");
+        MakeRandomAngryChunk();
+        // _enemyChunk = SwitchBounds(s2v(message),_hBounds,_eBounds);
+    }
+
+
+    // Returns a random location in specified coordinates
+    private static Vector3Int RandomEnemyPointInRange(int x1, int y1, int x2, int y2)
+    {
+        return new Vector3Int(Random.Range(x1,x2),Random.Range(y1,(y1 + y2)/2));
+    }
+
+    // Adds a chunk at the specified point and adds it to the landed array if the spot isn't already occupied
+    private Vector3Int[] AddChunkAtPoint(Vector3Int[] chunk, Vector3Int chunkPoint)
+    {
+        chunk ??= new Vector3Int[] {};
+        if (chunk.Any(p => p.x == chunkPoint.x && p.y == chunkPoint.y))
+            return chunk;
+        return chunk.Concat(new [] {chunkPoint}).ToArray();
+    }
+    // Makes a random angry chunk on the board
+    private void MakeRandomAngryChunk()
+    {
+        _myChunk = AddChunkAtPoint(_myChunk,RandomEnemyPointInRange(_hBounds.xMin,_hBounds.yMin,_hBounds.xMax,_hBounds.yMax));
+    }
+
     private void Update()
     {
         if (null == Camera.main) return;
@@ -184,6 +230,8 @@ public class GMScript : NetworkBehaviour
 
 
 
+    // Makes the buttons at the beginning where you can choose host, client, or server
+    // Shows status if it is the server or the client
     private void OnGUI()
     {
         GUILayout.BeginArea(new Rect(10, 10, 300, 300));
@@ -286,6 +334,7 @@ public class GMScript : NetworkBehaviour
                 enemyMap.SetTile(p, pieceTile);
     }
 
+    // Starts the network as host, client, or server depending on which button is clicked
     private void StartButtons()
     {
         if (GUILayout.Button("Host")) { 
@@ -306,6 +355,7 @@ public class GMScript : NetworkBehaviour
 
     }
 
+    // Shows the status of what each person is (host, server, or client) and the transport type
     private static void StatusLabels()
     {
         var mode = NetworkManager.Singleton.IsHost ? "Host" : NetworkManager.Singleton.IsServer ? "Server" : "Client";
